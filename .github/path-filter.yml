@@ -1,0 +1,14 @@
+---
+base: &base
+  - ".terraform-version"
+  - ".github/workflows/terraform-c{i,d}.yml"
+  - ".github/actions/terraform-c{i,d}/action.yml"
+  - "aqua.yaml"
+
+global:
+  - *base
+  - "global/*"
+
+env/dev:
+  - *base
+  - "env/dev/*"

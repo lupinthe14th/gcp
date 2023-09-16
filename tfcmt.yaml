@@ -1,0 +1,6 @@
+---
+plan_patch: true
+terraform:
+  plan:
+    when_no_changes:
+      disable_comment: true

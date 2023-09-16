@@ -1,0 +1,57 @@
+---
+name: terraform-cd
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  determine-workdir:
+    if: github.event.pull_request.merged == true
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    outputs:
+      workdirs: ${{ steps.filter.outputs.workdirs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: .github/path-filter.yml
+
+      - name: filter
+        id: filter
+        run: |
+          WORKDIRS=$(echo '${{ toJSON(steps.changes.outputs) }}' | jq '. | to_entries[] | select(.value == "true" and .key != "base") | .key')
+          echo "workdirs=$(echo "$WORKDIRS" | jq -sc '.')" >> "$GITHUB_OUTPUT"
+
+  terraform-cd:
+    needs: determine-workdir
+    if: needs.determine-workdir.outputs.workdirs != '[]'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
+      pull-requests: write
+    strategy:
+      matrix:
+        workdir: ${{ fromJSON(needs.determine-workdir.outputs.workdirs) }}
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+      - name: Set environment variables for each env
+        run: |
+          ENV=$(echo "${{ matrix.workdir }}" | cut -d '/' -f2)
+          yq "with_entries(select(.key == \"$ENV\")) | .$ENV" .github/account-mapping.yml -o props | tr -d " " >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/terraform-cd/
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: ${{ matrix.workdir }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
