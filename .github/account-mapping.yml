@@ -1,0 +1,10 @@
+---
+defaults: &defaults
+  WORKLOAD_IDENTITY_PROVIDER: projects/866950941911/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-oidc
+  SERVICE_ACCOUNT: github-actions-svc@bigquery-dev-398810.iam.gserviceaccount.com
+
+global:
+  <<: *defaults
+
+dev:
+  <<: *defaults

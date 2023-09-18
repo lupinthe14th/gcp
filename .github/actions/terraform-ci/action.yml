@@ -1,0 +1,140 @@
+---
+name: terraform-ci-gcp
+description: terraform ci action for gcp
+inputs:
+  github_token:
+    description: github token
+    required: true
+  working-directory:
+    description: working directory
+    required: true
+    default: ""
+  workload_identity_provider:
+    description: |-
+      The full identifier of the Workload Identity Provider, including the
+      project number, pool name, and provider name. If provided, this must be
+      the full identifier which includes all parts, for example:
+      "projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider".
+      This is mutually exclusive with "credentials_json".
+    required: true
+  service_account:
+    description: |-
+      Email address or unique identifier of the Google Cloud service account for
+      which to generate credentials. This is required if
+      "workload_identity_provider" is specified.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Detect Terraform version
+      run: |
+        echo "TF_VERSION=$(cat "$GITHUB_WORKSPACE"/.terraform-version)" >> "$GITHUB_ENV"
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - id: "auth"
+      name: "Authenticate to Google Cloud"
+      uses: "google-GitHub-actions/auth@v1"
+      with:
+        create_credentials_file: true
+        workload_identity_provider: ${{ inputs.workload_identity_provider }}
+        service_account: ${{ inputs.service_account }}
+
+    - id: "setup"
+      name: "set up for terraform command"
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - id: "td-fmt"
+      name: "Run terraform fmt"
+      run: terraform fmt -check -recursive
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - id: "tf-init"
+      name: "Run terraform init"
+      if: "!startsWith(github.head_ref , 'renovate/terraform-provider-version')"
+      run: terraform init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - id: "tf-init-upgrade"
+      name: "Run terraform init upgrade"
+      if: startsWith(github.head_ref , 'renovate/terraform-provider-version')
+      run: |
+        terraform init -upgrade
+        terraform providers lock \
+        -platform=darwin_amd64 \
+        -platform=darwin_arm64 \
+        -platform=linux_amd64
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Commit lock file
+      if: startsWith(github.head_ref , 'renovate/terraform-provider-version')
+      uses: EndBug/add-and-commit@v9
+      with:
+        cwd: ${{ inputs.working-directory }}
+        add: ".terraform.lock.hcl"
+        message: "[GitHub Actions] Add platforms darwin_amd64, darwin_arm64 and windows_amd64 in terraform.lock.hcl [skip ci]"
+        default_author: github_actions
+
+    - name: tflint
+      uses: reviewdog/action-tflint@master
+      with:
+        github_token: ${{ inputs.github_token }}
+        working_directory: ${{ inputs.working-directory }}
+        reporter: github-check
+        fail_on_error: true
+        filter_mode: "nofilter"
+        tflint_rulesets: "gcp"
+        flags: "--module --enable-plugin=gcp"
+
+    - id: "tf-validate"
+      name: "Run terraform validate"
+      run: terraform validate -no-color
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - id: cache-tools
+      name: Cache Tools
+      uses: actions/cache@v3
+      with:
+        path: ~/.local/share/aquaproj-aqua
+        key: cache-tools-${{ hashFiles('"$GITHUB_WORKSPACE"/aqua.yaml') }}
+
+    - id: aqua-installer
+      uses: aquaproj/aqua-installer@v2.1.2
+      with:
+        aqua_version: v2.10.1
+        aqua_opts: ""
+
+    - id: "tfcmt"
+      name: Terraform plan
+      run: |
+        if [ -n "$PR_HEAD_SHA" ]; then
+          export GITHUB_SHA=$PR_HEAD_SHA
+        fi
+        tfcmt -owner "$OWNER" -repo "$REPO" -pr "$PR_NUMBER" \
+              -var "target:${{ inputs.working-directory }}" plan \
+              -- terraform plan -no-color -detailed-exitcode
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_NUMBER: ${{ github.event.number }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: tfsec
+      uses: aquasecurity/tfsec-pr-commenter-action@v1.3.1
+      with:
+        github_token: ${{ inputs.github_token }}
+        working_directory: ${{ inputs.working-directory }}
+        tfsec_args: '--config-file "$GITHUB_WORKSPACE"/tfsec.yml'
+
+    - name: Status check only for Pull Request by renovate
+      if: github.event.pull_request.user.login == 'renovate[bot]'
+      run: exit ${{ steps.tfcmt.outputs.exitcode }}
+      shell: bash
