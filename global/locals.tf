@@ -8,12 +8,7 @@ locals {
     "sts.googleapis.com"                   # Security Token Service API
   ])
   roles = [
-    "cloudkms.admin",
-    "iam.serviceAccountAdmin",
-    "iam.workloadIdentityPoolAdmin",
-    "resourcemanager.projectIamAdmin",
-    "storage.admin",
-    "bigquery.admin",
+    "editor",
   ]
   repo_name = "lupinthe14th/gcp"
 }
