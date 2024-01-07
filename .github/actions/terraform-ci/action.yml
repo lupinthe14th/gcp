@@ -35,7 +35,7 @@ runs:
 
     - id: "auth"
       name: "Authenticate to Google Cloud"
-      uses: "google-GitHub-actions/auth@v1"
+      uses: "google-GitHub-actions/auth@v2"
       with:
         create_credentials_file: true
         workload_identity_provider: ${{ inputs.workload_identity_provider }}
