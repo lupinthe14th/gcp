@@ -100,7 +100,7 @@ runs:
 
     - id: cache-tools
       name: Cache Tools
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.local/share/aquaproj-aqua
         key: cache-tools-${{ hashFiles('"$GITHUB_WORKSPACE"/aqua.yaml') }}
